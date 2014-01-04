@@ -1,212 +1,236 @@
+<!DOCTYPE html5>
 <html>
-Select a .dzr file: <input id="myfile" type="file"/>
+    <head>
+        <link href="http://netdna.bootstrapcdn.com/bootstrap/3.0.3/css/bootstrap.min.css" rel="stylesheet" media="screen">
+        <script src="http://code.jquery.com/jquery-latest.js"></script>
+        <script src="http://netdna.bootstrapcdn.com/bootstrap/3.0.3/js/bootstrap.min.js"></script>
+        <script src="http://code.jquery.com/ui/1.10.3/jquery-ui.min.js"></script>
+    </head>
 
-<div id="tree" style="font-family: 'Courier New' Courier, monospace; font-size: 13px" ></div>
+    <body>
+        Select a .dzr file: <input id="myfile" type="file"/>
 
-<script>
-    var fileInput = document.getElementById('myfile');
-    var fReader = new FileReader();
-    var data;
-    var offset;
-    var root;
-
-    typeSizes = {
-        "ACTR" : 0x20,
-        "ACT[0-9a-f]" : 0x20,
-        "FILI" : 0x08,
-        "LBNK" : 0x01,
-        "PLYR" : 0x20,
-        "SCLS" : 0x0C, //8 //??
-        "LGTV" : 0x1C, //28 not sure about this, but a coverage test left 28 bytes untouched
-        "SCOB" : 0x24, //36
-        "SCO[0-9a-f]" : 0x24, //36
-        }
+        <ul id="tree" class="sortable" style="font-family: 'Courier New' Courier, monospace; font-size: 13px; max-width: 66%; margin:auto" ></ul>
 
 
-    fReader.onload = function(e) {
-      console.log(e.target.result); /// <-- this contains an ArrayBuffer
-      data = new DataView(e.target.result);
-      globalFileOffset = 0;
-      
-      document.getElementById("tree").innerHTML ="";
-      
-      loadDZR();
-      render(root);
-      
-      
-    }
+        <script>
+            var fileInput = document.getElementById('myfile');
+            var fReader = new FileReader();
+            var data;
+            var offset;
+            var root;
 
-    fileInput.onchange = function(e) {
-        if(!this.files[0]) return;
-        var file = this.files[0];
-        console.log("File changed!");
-        
-        var ext = this.value.match(/\.([^\.]+)$/)[1];
-        if (ext != "dzr"){
-            console.warn("Wrong filetype");
-            return;
-           }
+            typeSizes = {
+                "ACTR" : 0x20,
+                "ACT[0-9a-f]" : 0x20,
+                "FILI" : 0x08,
+                "LBNK" : 0x01,
+                "PLYR" : 0x20,
+                "SCLS" : 0x0C, //8 //??
+                "LGTV" : 0x1C, //28 not sure about this, but a coverage test left 28 bytes untouched
+                "SCOB" : 0x24, //36
+                "SCO[0-9a-f]" : 0x24, //36
+                }
+
+
+            fReader.onload = function(e) {
+              console.log(e.target.result); /// <-- this contains an ArrayBuffer
+              data = new DataView(e.target.result);
+              globalFileOffset = 0;
+              
+              document.getElementById("tree").innerHTML ="";
+              
+              loadDZR();
+              render(root);
+
+              function applySortable(){
+                   $(this).sortable({
+                    opacity: 0.5
+                    });
+                    $(this).find("> li > ul").each(applySortable); 
+                }
+              $(".sortable").each(applySortable);
+              
+              
+            }
+
+            fileInput.onchange = function(e) {
+                if(!this.files[0]) return;
+                var file = this.files[0];
+                console.log("File changed!");
                 
-        fReader.readAsArrayBuffer(file);
-    }
+                var ext = this.value.match(/\.([^\.]+)$/)[1];
+                if (ext != "dzr"){
+                    console.warn("Wrong filetype");
+                    return;
+                   }
+                        
+                fReader.readAsArrayBuffer(file);
+            }
 
-    function read1(){
-        r = data.getInt8(globalFileOffset);
-        globalFileOffset += 1
-        return r;
-    }
+            function read1(){
+                r = data.getInt8(globalFileOffset);
+                globalFileOffset += 1
+                return r;
+            }
 
-    function read2(){
-        r = data.getInt16(globalFileOffset);
-        globalFileOffset += 2
-        return r;
-    }
+            function read2(){
+                r = data.getInt16(globalFileOffset);
+                globalFileOffset += 2
+                return r;
+            }
 
-    function read4(){
-        r = data.getInt32(globalFileOffset);
-        globalFileOffset += 4;
-        return r;
-    }
+            function read4(){
+                r = data.getInt32(globalFileOffset);
+                globalFileOffset += 4;
+                return r;
+            }
 
-    function readChar(){    
-        r = read1();
-        return String.fromCharCode(r);
-    }
-
-
-    function readN(size){
-        var buf = new DataView(new ArrayBuffer(size));
-        for (var i = 0; i < size; i++) {
-          buf.setInt8(i, read1());
-        }
-        
-        return buf;
-    }
+            function readChar(){    
+                r = read1();
+                return String.fromCharCode(r);
+            }
 
 
-    function loadDZR(){
-
-        nchunks = read4();
-        console.log(nchunks + " chunks in file");
-
-        root = {}
-        
-        for (var i = 0; i < nchunks; i++){
-        
-            ctype = readChar() + readChar() + readChar() + readChar();
-            //console.log("Type: " + ctype);
-            
-            elemsize = getSize(ctype)
-            
-            ecount = read4();
-            //console.log("Elements count: " + ecount);
-            
-            offset = read4();
-            //console.log("Offset: " + offset.toString(16));
-        
-            console.log(ecount + " x " + ctype + " @ " + offset);
-            
-            root[ctype] = { "count": ecount, "offset": offset, "size": 0, "elements": [], "elemSize" : elemsize }
-        }
-        
-        
-        for (var key in root) {
-            if (root.hasOwnProperty(key)) {
-                
-                //size = getSize(key);
-                if(!root[key].elemSize){ 
-                    console.warn("Size unknown for type " + key);
-                    continue;
+            function readN(size){
+                var buf = new DataView(new ArrayBuffer(size));
+                for (var i = 0; i < size; i++) {
+                  buf.setInt8(i, read1());
                 }
                 
-                offset = root[key].offset
-                count = root[key].count
-                size = root[key].elemSize
+                return buf;
+            }
+
+
+            function loadDZR(){
+
+                nchunks = read4();
+                console.log(nchunks + " chunks in file");
+
+                root = {}
                 
+                for (var i = 0; i < nchunks; i++){
                 
-                seek(offset);
-                for(var i = 0; i < count; i++){
+                    ctype = readChar() + readChar() + readChar() + readChar();
+                    //console.log("Type: " + ctype);
+                    
+                    elemsize = getSize(ctype)
+                    
+                    ecount = read4();
+                    //console.log("Elements count: " + ecount);
+                    
+                    offset = read4();
+                    //console.log("Offset: " + offset.toString(16));
                 
-                    readed = readN(size)
-                    root[key].elements.push(readed);
-                    root[key].size += root[key].elemSize;
+                    console.log(ecount + " x " + ctype + " @ " + offset);
+                    
+                    root[ctype] = { "count": ecount, "offset": offset, "size": 0, "elements": [], "elemSize" : elemsize }
                 }
-               
-            }
-        }
-        
-        console.log(root);
-
-    }
-
-    function seek(offset){
-        globalFileOffset = offset;
-    }
-
-    function getSize(key){
-        for(var type in typeSizes){
-            if(typeSizes.hasOwnProperty(type)){
-            
-                patt = new RegExp(type, "g");
-                if(patt.test(key))
-                    return typeSizes[type];
-            }
-        }
-    }
-
-    function render(root){
-
-        for (var type in root){
-            d = document.createElement("div");
-            d.innerHTML = "<div><b>" + type + "</b></div>";
-            
-            for(var i = 0; i < root[type].elements.length; i++){
-                var e = document.createElement("div");            
-                e.innerHTML = DVToHex(root[type].elements[i]);
                 
                 
-                d.appendChild(e);
+                for (var key in root) {
+                    if (root.hasOwnProperty(key)) {
+                        
+                        //size = getSize(key);
+                        if(!root[key].elemSize){ 
+                            console.warn("Size unknown for type " + key);
+                            continue;
+                        }
+                        
+                        offset = root[key].offset
+                        count = root[key].count
+                        size = root[key].elemSize
+                        
+                        
+                        seek(offset);
+                        for(var i = 0; i < count; i++){
+                        
+                            readed = readN(size)
+                            root[key].elements.push(readed);
+                            root[key].size += root[key].elemSize;
+                        }
+                       
+                    }
+                }
+                
+                console.log(root);
+
             }
-            document.getElementById("tree").appendChild(d);
 
-        }
-        
-    }
+            function seek(offset){
+                globalFileOffset = offset;
+            }
 
-    function DVToHex(arr){
-        
-        size = arr.buffer.byteLength;
-        
-        ret = "";
-        for(var i = 0; i < size; i++){
-            var d = arr.getUint8(i).toString(16).toUpperCase();
-            if(d.length == 1) ret += "0";
-            ret += d + " ";
-            //ret += String.fromCharCode(arr.getUint8(i));
-        }
-        return ret;
+            function getSize(key){
+                for(var type in typeSizes){
+                    if(typeSizes.hasOwnProperty(type)){
+                    
+                        patt = new RegExp(type, "g");
+                        if(patt.test(key))
+                            return typeSizes[type];
+                    }
+                }
+            }
 
-    }
+            function render(root){
 
-    function recalculateOffsets(){
-        
-        offsetDataStart = Object.keys(root).length * 12 + 4
-        nextOffset = offsetDataStart
-        
-        for (var type in root){
-            root[type].count = root[type].elements.length
-            root[type].size = root[type].count * root[type].elemSize
-            root[type].offset = nextOffset
+                for (var type in root){
+                    d = document.createElement("li");
+                    //d.classList.add("well")
+                    d.appendChild(document.createTextNode(type))
+                    
+                    u = document.createElement("ul");
+                    u.classList.add("sortable");
+                    
+                    for(var i = 0; i < root[type].elements.length; i++){
+                        var e = document.createElement("li");            
+                        e.innerHTML = DVToHex(root[type].elements[i]);
+                        
+                        u.appendChild(e);
+                    }
+
+                    d.appendChild(u)
+                    
+                    document.getElementById("tree").appendChild(d);
+
+                }
+                
+            }
+
+            function DVToHex(arr){
+                
+                size = arr.buffer.byteLength;
+                
+                ret = "";
+                for(var i = 0; i < size; i++){
+                    var d = arr.getUint8(i).toString(16).toUpperCase();
+                    if(d.length == 1) ret += "0";
+                    ret += d + " ";
+                    //ret += String.fromCharCode(arr.getUint8(i));
+                }
+                return ret;
+
+            }
+
+            function recalculateOffsets(){
+                
+                offsetDataStart = Object.keys(root).length * 12 + 4
+                nextOffset = offsetDataStart
+                
+                for (var type in root){
+                    root[type].count = root[type].elements.length
+                    root[type].size = root[type].count * root[type].elemSize
+                    root[type].offset = nextOffset
+                    
+                    nextOffset = root[type].size
+                }
+
+            }
+
             
-            nextOffset = root[type].size
-        }
-
-    }
-
-    
-</script>
+        </script>
 
 
-
+    </body>
 </html>
 
