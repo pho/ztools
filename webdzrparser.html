@@ -1,0 +1,212 @@
+<html>
+Select a .dzr file: <input id="myfile" type="file"/>
+
+<div id="tree" style="font-family: 'Courier New' Courier, monospace; font-size: 13px" ></div>
+
+<script>
+    var fileInput = document.getElementById('myfile');
+    var fReader = new FileReader();
+    var data;
+    var offset;
+    var root;
+
+    typeSizes = {
+        "ACTR" : 0x20,
+        "ACT[0-9a-f]" : 0x20,
+        "FILI" : 0x08,
+        "LBNK" : 0x01,
+        "PLYR" : 0x20,
+        "SCLS" : 0x0C, //8 //??
+        "LGTV" : 0x1C, //28 not sure about this, but a coverage test left 28 bytes untouched
+        "SCOB" : 0x24, //36
+        "SCO[0-9a-f]" : 0x24, //36
+        }
+
+
+    fReader.onload = function(e) {
+      console.log(e.target.result); /// <-- this contains an ArrayBuffer
+      data = new DataView(e.target.result);
+      globalFileOffset = 0;
+      
+      document.getElementById("tree").innerHTML ="";
+      
+      loadDZR();
+      render(root);
+      
+      
+    }
+
+    fileInput.onchange = function(e) {
+        if(!this.files[0]) return;
+        var file = this.files[0];
+        console.log("File changed!");
+        
+        var ext = this.value.match(/\.([^\.]+)$/)[1];
+        if (ext != "dzr"){
+            console.warn("Wrong filetype");
+            return;
+           }
+                
+        fReader.readAsArrayBuffer(file);
+    }
+
+    function read1(){
+        r = data.getInt8(globalFileOffset);
+        globalFileOffset += 1
+        return r;
+    }
+
+    function read2(){
+        r = data.getInt16(globalFileOffset);
+        globalFileOffset += 2
+        return r;
+    }
+
+    function read4(){
+        r = data.getInt32(globalFileOffset);
+        globalFileOffset += 4;
+        return r;
+    }
+
+    function readChar(){    
+        r = read1();
+        return String.fromCharCode(r);
+    }
+
+
+    function readN(size){
+        var buf = new DataView(new ArrayBuffer(size));
+        for (var i = 0; i < size; i++) {
+          buf.setInt8(i, read1());
+        }
+        
+        return buf;
+    }
+
+
+    function loadDZR(){
+
+        nchunks = read4();
+        console.log(nchunks + " chunks in file");
+
+        root = {}
+        
+        for (var i = 0; i < nchunks; i++){
+        
+            ctype = readChar() + readChar() + readChar() + readChar();
+            //console.log("Type: " + ctype);
+            
+            elemsize = getSize(ctype)
+            
+            ecount = read4();
+            //console.log("Elements count: " + ecount);
+            
+            offset = read4();
+            //console.log("Offset: " + offset.toString(16));
+        
+            console.log(ecount + " x " + ctype + " @ " + offset);
+            
+            root[ctype] = { "count": ecount, "offset": offset, "size": 0, "elements": [], "elemSize" : elemsize }
+        }
+        
+        
+        for (var key in root) {
+            if (root.hasOwnProperty(key)) {
+                
+                //size = getSize(key);
+                if(!root[key].elemSize){ 
+                    console.warn("Size unknown for type " + key);
+                    continue;
+                }
+                
+                offset = root[key].offset
+                count = root[key].count
+                size = root[key].elemSize
+                
+                
+                seek(offset);
+                for(var i = 0; i < count; i++){
+                
+                    readed = readN(size)
+                    root[key].elements.push(readed);
+                    root[key].size += root[key].elemSize;
+                }
+               
+            }
+        }
+        
+        console.log(root);
+
+    }
+
+    function seek(offset){
+        globalFileOffset = offset;
+    }
+
+    function getSize(key){
+        for(var type in typeSizes){
+            if(typeSizes.hasOwnProperty(type)){
+            
+                patt = new RegExp(type, "g");
+                if(patt.test(key))
+                    return typeSizes[type];
+            }
+        }
+    }
+
+    function render(root){
+
+        for (var type in root){
+            d = document.createElement("div");
+            d.innerHTML = "<div><b>" + type + "</b></div>";
+            
+            for(var i = 0; i < root[type].elements.length; i++){
+                var e = document.createElement("div");            
+                e.innerHTML = DVToHex(root[type].elements[i]);
+                
+                
+                d.appendChild(e);
+            }
+            document.getElementById("tree").appendChild(d);
+
+        }
+        
+    }
+
+    function DVToHex(arr){
+        
+        size = arr.buffer.byteLength;
+        
+        ret = "";
+        for(var i = 0; i < size; i++){
+            var d = arr.getUint8(i).toString(16).toUpperCase();
+            if(d.length == 1) ret += "0";
+            ret += d + " ";
+            //ret += String.fromCharCode(arr.getUint8(i));
+        }
+        return ret;
+
+    }
+
+    function recalculateOffsets(){
+        
+        offsetDataStart = Object.keys(root).length * 12 + 4
+        nextOffset = offsetDataStart
+        
+        for (var type in root){
+            root[type].count = root[type].elements.length
+            root[type].size = root[type].count * root[type].elemSize
+            root[type].offset = nextOffset
+            
+            nextOffset = root[type].size
+        }
+
+    }
+
+    
+</script>
+
+
+
+</html>
+
